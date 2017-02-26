@@ -29,6 +29,9 @@
 
 import numpy
 import scipy
+import json
+import zlib
+
 try:
     import cPickle as pickle
 except ImportError:
@@ -74,13 +77,13 @@ class RedisStorage(Storage):
         else:
             # Make sure it is a 1d vector
             v = numpy.reshape(v, v.shape[0])
-            val_dict['vector'] = v.tostring()
+            val_dict['vector'] = zlib.compress(bytes(v.tostring()), 9)
 
         val_dict['dtype'] = v.dtype.name
 
         # Add data if set
         if data is not None:
-            val_dict['data'] = data
+            val_dict['data'] = zlib.compress(bytes(data, 'UTF-8'), 9)
 
         # Push JSON representation of dict to end of bucket list
         self.redis_object.rpush(redis_key, pickle.dumps(val_dict, protocol=2))
@@ -154,11 +157,14 @@ class RedisStorage(Storage):
                 vector = scipy.sparse.coo_matrix( (coo_data,(coo_row,coo_col)), shape=(val_dict['dim'],1) )
 
             else:
-                vector = numpy.fromstring(val_dict['vector'],
+                vector = numpy.fromstring(zlib.decompress(val_dict['vector']),
                                           dtype=val_dict['dtype'])
 
             # Add data to result tuple, if present
-            results.append((vector, val_dict.get('data')))
+            if 'data' in val_dict:
+                results.append((vector, zlib.decompress(val_dict.get('data').decode('UTF-8'))))
+            else:
+                results.append((vector, None))
 
         return results
 
